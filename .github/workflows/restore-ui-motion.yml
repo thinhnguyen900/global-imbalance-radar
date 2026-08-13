@@ -1,4 +1,4 @@
-name: Restore approved UI motion
+name: Research queue benchmark emphasis
 on:
   push:
     paths:
@@ -10,63 +10,48 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Normalize money comparisons
+      - name: Patch research queue hierarchy
         shell: bash
         run: |
-          cat > /tmp/patch_currency.py <<'PY'
+          cat > /tmp/patch_queue.py <<'PY'
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text()
 
-          old="const API='https://pixiaznazjmofxufgpru.supabase.co/functions/v1/radar-control-center?action=data';const $=s=>document.querySelector(s)"
-          new="const API='https://pixiaznazjmofxufgpru.supabase.co/functions/v1/radar-control-center?action=data';const FX_API='https://open.er-api.com/v6/latest/USD';let FX={rates:{USD:1},updated:null,lastFetch:0};async function loadFX(){if(Date.now()-FX.lastFetch<1800000&&Object.keys(FX.rates).length>1)return;FX.lastFetch=Date.now();try{let c=new AbortController(),t=setTimeout(()=>c.abort(),4500),r=await fetch(FX_API,{cache:'no-store',signal:c.signal});clearTimeout(t);if(!r.ok)throw Error('FX '+r.status);let j=await r.json();if(j&&j.rates){FX.rates=j.rates;FX.updated=j.time_last_update_utc||new Date().toISOString()}}catch(e){}}function toUsd(amount,currency){let n=Number(amount),c=String(currency||'').toUpperCase();if(!Number.isFinite(n)||n<=0||!c)return null;if(c==='USD')return n;let rate=Number(FX.rates?.[c]);return Number.isFinite(rate)&&rate>0?n/rate:null}function usdLine(amount,currency){let u=toUsd(amount,currency);return u==null?'USD unavailable':`≈ US$${u.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`}function moneyLocalUsd(amount,currency){if(amount==null||!Number.isFinite(Number(amount)))return 'Pending';let c=String(currency||'').toUpperCase();let local=Number(amount).toLocaleString()+(c?' '+c:'');let usd=usdLine(amount,c);return `<span class=\"statusText\">${local}</span><div class=\"mini\">${usd}</div>`}const $=s=>document.querySelector(s)"
-          if old in s and 'function moneyLocalUsd' not in s:
-              s=s.replace(old,new,1)
+          css_old='.benchmarkCell{white-space:nowrap}'
+          css_new='.benchmarkCell{white-space:nowrap}.benchmarkBox{display:inline-block;min-width:170px;padding:7px 9px;border:1px solid rgba(255,211,109,.30);border-radius:9px;background:rgba(255,211,109,.055)}.benchmarkStrong{font-size:16px;font-weight:800;color:#ffe39a;line-height:1.2}.benchmarkUsd{font-size:11px;color:#c9d7e0;margin-top:2px}.benchmarkMeta{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.25}.research .stateCol{width:150px;max-width:150px;white-space:nowrap}.research .economicsCol{min-width:150px}.research .benchmarkCol{min-width:210px}.research .tbl td{vertical-align:middle}'
+          if css_old in s and '.benchmarkStrong{' not in s:
+              s=s.replace(css_old,css_new,1)
 
-          old_research="<td><span class=\"statusText\">sell ${bench}</span><div class=\"mini\">landed ${land!=null?N(land).toLocaleString()+' '+E(r?.landed_currency||''):'pending'} · margin ${margin!=null?N(margin)+'%':'pending'}</div></td>"
-          new_research="<td><span class=\"mini\">sell</span>${e.d?.price?moneyLocalUsd(e.d.price,e.d.currency):'<span class=\"statusText\">Pending</span>'}<div class=\"mini\" style=\"margin-top:5px\">landed</div>${land!=null?moneyLocalUsd(land,r?.landed_currency||''):'<span class=\"statusText\">Pending</span>'}<div class=\"mini\">margin ${margin!=null?N(margin)+'%':'pending'}</div></td>"
-          if old_research in s:
-              s=s.replace(old_research,new_research,1)
+          helper="""function marketBenchmarkFor(o,e){let market=String(e.r?.destination_market||e.d?.market||o.target_market||''),rows=A(DATA,'market_price_benchmarks').filter(b=>(String(b.opportunity_id||'')===String(o.id)||String(b.product_key||'')===String(o.product_key||''))&&(!market||String(b.market_code||'')===market));return rows.sort((a,b)=>String(b.updated_at||b.created_at||'').localeCompare(String(a.updated_at||a.created_at||'')))[0]||null}function benchmarkCellHtml(o,e){let b=marketBenchmarkFor(o,e),p=b?.competitive_sell_price??e.d?.price,c=b?.currency||e.d?.currency||'';if(p==null)return '<div class=\"benchmarkBox\"><div class=\"benchmarkStrong\">Pending</div><div class=\"benchmarkMeta\">competitive market benchmark not complete</div></div>';let u=usdLine(p,c),metaText=b?`${N(b.independent_seller_count)} independent sellers · ${E(b.benchmark_method||'competitive benchmark')}${b.benchmark_quality_score!=null?' · quality '+N(b.benchmark_quality_score):''}`:'provisional destination price · benchmark audit pending';return `<div class=\"benchmarkBox\"><div class=\"benchmarkStrong\">${N(p).toLocaleString()} ${E(c||'')}</div><div class=\"benchmarkUsd\">${E(u)}</div><div class=\"benchmarkMeta\">${metaText}</div></div>`}"
+          anchor='function renderResearch(){'
+          if 'function marketBenchmarkFor(o,e)' not in s and anchor in s:
+              s=s.replace(anchor,helper+anchor,1)
 
-          old_focus="<td>${land!=null?N(land).toLocaleString()+' '+E(r?.landed_currency||''):'Pending'}<div class=\"mini\">margin ${margin!=null?N(margin)+'%':'pending'}</div></td>"
-          new_focus="<td>${land!=null?moneyLocalUsd(land,r?.landed_currency||''):'Pending'}<div class=\"mini\">margin ${margin!=null?N(margin)+'%':'pending'}</div></td>"
-          if old_focus in s:
-              s=s.replace(old_focus,new_focus,1)
-
-          old_src="<div class=\"price\">${r?.source_price!=null?N(r.source_price).toLocaleString()+' '+E(r.source_currency||''):src?.price?N(src.price).toLocaleString()+' '+E(src.currency||''):'Pending'}</div>"
-          new_src="<div class=\"price\">${r?.source_price!=null?N(r.source_price).toLocaleString()+' '+E(r.source_currency||''):src?.price?N(src.price).toLocaleString()+' '+E(src.currency||''):'Pending'}</div>${r?.source_price!=null?`<div class=\"mini\">${E(usdLine(r.source_price,r.source_currency||''))}</div>`:src?.price?`<div class=\"mini\">${E(usdLine(src.price,src.currency||''))}</div>`:''}"
-          if old_src in s:
-              s=s.replace(old_src,new_src,1)
-
-          old_dst="<div class=\"price\">${r?.destination_price!=null?N(r.destination_price).toLocaleString()+' '+E(r.destination_currency||''):dst?.price?N(dst.price).toLocaleString()+' '+E(dst.currency||''):'Pending'}</div>"
-          new_dst="<div class=\"price\">${r?.destination_price!=null?N(r.destination_price).toLocaleString()+' '+E(r.destination_currency||''):dst?.price?N(dst.price).toLocaleString()+' '+E(dst.currency||''):'Pending'}</div>${r?.destination_price!=null?`<div class=\"mini\">${E(usdLine(r.destination_price,r.destination_currency||''))}</div>`:dst?.price?`<div class=\"mini\">${E(usdLine(dst.price,dst.currency||''))}</div>`:''}"
-          if old_dst in s:
-              s=s.replace(old_dst,new_dst,1)
-
-          old_load="async function load(){try{let r=await fetch(API+'&_='+Date.now(),{cache:'no-store'});"
-          new_load="async function load(){try{await loadFX();let r=await fetch(API+'&_='+Date.now(),{cache:'no-store'});"
-          if old_load in s:
-              s=s.replace(old_load,new_load,1)
-
-          # Remove unused benchmark string construction if present; harmless but avoids confusion.
-          s=s.replace(",bench=e.d?.price?N(e.d.price).toLocaleString()+' '+E(e.d.currency||''):'Pending'","")
-
+          start=s.find('function renderResearch(){')
+          end=s.find('function renderArchive(){',start)
+          if start==-1 or end==-1:
+              raise SystemExit('renderResearch markers not found')
+          new_render='''function renderResearch(){let rows=A(DATA,'opportunities').filter(o=>active(o)&&!economics(o).exec).sort((a,b)=>economics(b).done-economics(a).done);$('#researchList').innerHTML=rows.length?`<table class="tbl"><thead><tr><th>Candidate</th><th>Route</th><th>Progress</th><th>Competitive benchmark</th><th>Landed / margin</th><th>State</th><th>Priority</th></tr></thead><tbody>${rows.map(o=>{let e=economics(o),r=e.r,land=r?.landed_cost??o.landed_cost_estimate,margin=r?.expected_margin_pct??o.expected_margin_pct,st=conciseStatus(o,e);return`<tr class="click" onclick="openOpp('${E(o.id)}')"><td><b>${icon(o.title)} ${E(o.title)}</b>${focusTrace(o)?' <span class="badge focusBadge">FOCUS</span>':''}<div class="mini">confidence ${o.confidence==null?'—':N(o.confidence)+'%'}</div></td><td>${E(r?.source_market||e.s?.market||'—')} → ${E(r?.destination_market||e.d?.market||o.target_market||'—')}</td><td><div class="queueStatus">${stageHtml(o,e)}</div></td><td class="benchmarkCol">${benchmarkCellHtml(o,e)}</td><td class="economicsCol">${land!=null?moneyLocalUsd(land,landedCurrency(o,r)):'<span class="statusText">Pending</span>'}<div class="mini">margin ${margin!=null?N(margin)+'%':'pending'}</div></td><td class="stateCol"><span class="statusTag ${st[1]}">${st[0]}</span></td><td class="score">${score(o)??'—'}</td></tr>`}).join('')}</tbody></table>`:'<div class="empty">No active research candidate.</div>'}'''
+          s=s[:start]+new_render+s[end:]
           p.write_text(s)
           PY
-          python /tmp/patch_currency.py
-      - name: Verify currency + preserved UI invariants
+          python /tmp/patch_queue.py
+      - name: Verify decision hierarchy and preserved invariants
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'function moneyLocalUsd' index.html
-          grep -q 'function usdLine' index.html
-          grep -q 'await loadFX()' index.html
+          grep -q 'Competitive benchmark</th>' index.html
+          grep -q 'function marketBenchmarkFor' index.html
+          grep -q 'market_price_benchmarks' index.html
+          grep -q 'benchmarkStrong' index.html
+          grep -q 'class="stateCol"' index.html
+          ! grep -q '<th>Status</th>' index.html
           grep -q 'animateMotion' index.html
           grep -q 'sellArrow' index.html
           grep -q 'activeGatePulse' index.html
           grep -q 'Focus Results' index.html
           grep -q 'Hunt / Quote' index.html
-          ! grep -q '<th>Engine next action</th>' index.html
       - name: Commit patch
         shell: bash
         run: |
@@ -74,5 +59,5 @@ jobs:
           git config user.email 'actions@users.noreply.github.com'
           git add index.html
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m 'Normalize cross-market currency comparisons'
+          git commit -m 'Emphasize competitive benchmark and compact research state'
           git push
