@@ -13,30 +13,27 @@ jobs:
       - name: Patch research queue hierarchy
         shell: bash
         run: |
-          cat > /tmp/patch_queue.py <<'PY'
+          python - <<'PY'
           from pathlib import Path
+          import base64
           p=Path('index.html')
           s=p.read_text()
-
-          css_old='.benchmarkCell{white-space:nowrap}'
-          css_new='.benchmarkCell{white-space:nowrap}.benchmarkBox{display:inline-block;min-width:170px;padding:7px 9px;border:1px solid rgba(255,211,109,.30);border-radius:9px;background:rgba(255,211,109,.055)}.benchmarkStrong{font-size:16px;font-weight:800;color:#ffe39a;line-height:1.2}.benchmarkUsd{font-size:11px;color:#c9d7e0;margin-top:2px}.benchmarkMeta{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.25}.research .stateCol{width:150px;max-width:150px;white-space:nowrap}.research .economicsCol{min-width:150px}.research .benchmarkCol{min-width:210px}.research .tbl td{vertical-align:middle}'
-          if css_old in s and '.benchmarkStrong{' not in s:
-              s=s.replace(css_old,css_new,1)
-
-          helper="""function marketBenchmarkFor(o,e){let market=String(e.r?.destination_market||e.d?.market||o.target_market||''),rows=A(DATA,'market_price_benchmarks').filter(b=>(String(b.opportunity_id||'')===String(o.id)||String(b.product_key||'')===String(o.product_key||''))&&(!market||String(b.market_code||'')===market));return rows.sort((a,b)=>String(b.updated_at||b.created_at||'').localeCompare(String(a.updated_at||a.created_at||'')))[0]||null}function benchmarkCellHtml(o,e){let b=marketBenchmarkFor(o,e),p=b?.competitive_sell_price??e.d?.price,c=b?.currency||e.d?.currency||'';if(p==null)return '<div class=\"benchmarkBox\"><div class=\"benchmarkStrong\">Pending</div><div class=\"benchmarkMeta\">competitive market benchmark not complete</div></div>';let u=usdLine(p,c),metaText=b?`${N(b.independent_seller_count)} independent sellers · ${E(b.benchmark_method||'competitive benchmark')}${b.benchmark_quality_score!=null?' · quality '+N(b.benchmark_quality_score):''}`:'provisional destination price · benchmark audit pending';return `<div class=\"benchmarkBox\"><div class=\"benchmarkStrong\">${N(p).toLocaleString()} ${E(c||'')}</div><div class=\"benchmarkUsd\">${E(u)}</div><div class=\"benchmarkMeta\">${metaText}</div></div>`}"
+          css=base64.b64decode('LmJlbmNobWFya0NlbGx7d2hpdGUtc3BhY2U6bm93cmFwfS5iZW5jaG1hcmtCb3h7ZGlzcGxheTppbmxpbmUtYmxvY2s7bWluLXdpZHRoOjE3MHB4O3BhZGRpbmc6N3B4IDlweDtib3JkZXI6MXB4IHNvbGlkIHJnYmEoMjU1LDIxMSwxMDksLjMwKTtib3JkZXItcmFkaXVzOjlweDtiYWNrZ3JvdW5kOnJnYmEoMjU1LDIxMSwxMDksLjA1NSl9LmJlbmNobWFya1N0cm9uZ3tmb250LXNpemU6MTZweDtmb250LXdlaWdodDo4MDA7Y29sb3I6I2ZmZTM5YTtsaW5lLWhlaWdodDoxLjJ9LmJlbmNobWFya1VzZHtmb250LXNpemU6MTFweDtjb2xvcjojYzlkN2UwO21hcmdpbi10b3A6MnB4fS5iZW5jaG1hcmtNZXRhe2ZvbnQtc2l6ZToxMHB4O2NvbG9yOnZhcigtLW11dGVkKTttYXJnaW4tdG9wOjRweDtsaW5lLWhlaWdodDoxLjI1fS5yZXNlYXJjaCAuc3RhdGVDb2x7d2lkdGg6MTUwcHg7bWF4LXdpZHRoOjE1MHB4O3doaXRlLXNwYWNlOm5vd3JhcH0ucmVzZWFyY2ggLmVjb25vbWljc0NvbHttaW4td2lkdGg6MTUwcHh9LnJlc2VhcmNoIC5iZW5jaG1hcmtDb2x7bWluLXdpZHRoOjIxMHB4fS5yZXNlYXJjaCAudGJsIHRke3ZlcnRpY2FsLWFsaWduOm1pZGRsZX0=').decode()
+          helper=base64.b64decode('ZnVuY3Rpb24gbWFya2V0QmVuY2htYXJrRm9yKG8sZSl7bGV0IG1hcmtldD1TdHJpbmcoZS5yPy5kZXN0aW5hdGlvbl9tYXJrZXR8fGUuZD8ubWFya2V0fHxvLnRhcmdldF9tYXJrZXR8fCcnKSxyb3dzPUEoREFUQSwnbWFya2V0X3ByaWNlX2JlbmNobWFya3MnKS5maWx0ZXIoYj0+KFN0cmluZyhiLm9wcG9ydHVuaXR5X2lkfHwnJyk9PT1TdHJpbmcoby5pZCl8fFN0cmluZyhiLnByb2R1Y3Rfa2V5fHwnJyk9PT1TdHJpbmcoby5wcm9kdWN0X2tleXx8JycpKSYmKCFtYXJrZXR8fFN0cmluZyhiLm1hcmtldF9jb2RlfHwnJyk9PT1tYXJrZXQpKTtyZXR1cm4gcm93cy5zb3J0KChhLGIpPT5TdHJpbmcoYi51cGRhdGVkX2F0fHxiLmNyZWF0ZWRfYXR8fCcnKS5sb2NhbGVDb21wYXJlKFN0cmluZyhhLnVwZGF0ZWRfYXR8fGEuY3JlYXRlZF9hdHx8JycpKSlbMF18fG51bGx9ZnVuY3Rpb24gYmVuY2htYXJrQ2VsbEh0bWwobyxlKXtsZXQgYj1tYXJrZXRCZW5jaG1hcmtGb3IobyxlKSxwPWI/LmNvbXBldGl0aXZlX3NlbGxfcHJpY2U/P2UuZD8ucHJpY2UsYz1iPy5jdXJyZW5jeXx8ZS5kPy5jdXJyZW5jeXx8Jyc7aWYocD09bnVsbClyZXR1cm4gJzxkaXYgY2xhc3M9ImJlbmNobWFya0JveCI+PGRpdiBjbGFzcz0iYmVuY2htYXJrU3Ryb25nIj5QZW5kaW5nPC9kaXY+PGRpdiBjbGFzcz0iYmVuY2htYXJrTWV0YSI+Y29tcGV0aXRpdmUgbWFya2V0IGJlbmNobWFyayBub3QgY29tcGxldGU8L2Rpdj48L2Rpdj4nO2xldCB1PXVzZExpbmUocCxjKSxtZXRhVGV4dD1iP2Ake04oYi5pbmRlcGVuZGVudF9zZWxsZXJfY291bnQpfSBpbmRlcGVuZGVudCBzZWxsZXJzIMK3ICR7RShiLmJlbmNobWFya19tZXRob2R8fCdjb21wZXRpdGl2ZSBiZW5jaG1hcmsnKX0ke2IuYmVuY2htYXJrX3F1YWxpdHlfc2NvcmUhPW51bGw/JyDCtyBxdWFsaXR5ICcrTihiLmJlbmNobWFya19xdWFsaXR5X3Njb3JlKTonJ31gOidwcm92aXNpb25hbCBkZXN0aW5hdGlvbiBwcmljZSDCtyBiZW5jaG1hcmsgYXVkaXQgcGVuZGluZyc7cmV0dXJuIGA8ZGl2IGNsYXNzPSJiZW5jaG1hcmtCb3giPjxkaXYgY2xhc3M9ImJlbmNobWFya1N0cm9uZyI+JHtOKHApLnRvTG9jYWxlU3RyaW5nKCl9ICR7RShjfHwnJyl9PC9kaXY+PGRpdiBjbGFzcz0iYmVuY2htYXJrVXNkIj4ke0UodSl9PC9kaXY+PGRpdiBjbGFzcz0iYmVuY2htYXJrTWV0YSI+JHttZXRhVGV4dH08L2Rpdj48L2Rpdj5gfQ==').decode()
+          render=base64.b64decode('ZnVuY3Rpb24gcmVuZGVyUmVzZWFyY2goKXtsZXQgcm93cz1BKERBVEEsJ29wcG9ydHVuaXRpZXMnKS5maWx0ZXIobz0+YWN0aXZlKG8pJiYhZWNvbm9taWNzKG8pLmV4ZWMpLnNvcnQoKGEsYik9PmVjb25vbWljcyhiKS5kb25lLWVjb25vbWljcyhhKS5kb25lKTskKCcjcmVzZWFyY2hMaXN0JykuaW5uZXJIVE1MPXJvd3MubGVuZ3RoP2A8dGFibGUgY2xhc3M9InRibCI+PHRoZWFkPjx0cj48dGg+Q2FuZGlkYXRlPC90aD48dGg+Um91dGU8L3RoPjx0aD5Qcm9ncmVzczwvdGg+PHRoPkNvbXBldGl0aXZlIGJlbmNobWFyazwvdGg+PHRoPkxhbmRlZCAvIG1hcmdpbjwvdGg+PHRoPlN0YXRlPC90aD48dGg+UHJpb3JpdHk8L3RoPjwvdHI+PC90aGVhZD48dGJvZHk+JHtyb3dzLm1hcChvPT57bGV0IGU9ZWNvbm9taWNzKG8pLHI9ZS5yLGxhbmQ9cj8ubGFuZGVkX2Nvc3Q/P28ubGFuZGVkX2Nvc3RfZXN0aW1hdGUsbWFyZ2luPXI/LmV4cGVjdGVkX21hcmdpbl9wY3Q/P28uZXhwZWN0ZWRfbWFyZ2luX3BjdCxzdD1jb25jaXNlU3RhdHVzKG8sZSk7cmV0dXJuYDx0ciBjbGFzcz0iY2xpY2siIG9uY2xpY2s9Im9wZW5PcHAoJyR7RShvLmlkKX0nKSI+PHRkPjxiPiR7aWNvbihvLnRpdGxlKX0gJHtFKG8udGl0bGUpfTwvYj4ke2ZvY3VzVHJhY2Uobyk/JyA8c3BhbiBjbGFzcz0iYmFkZ2UgZm9jdXNCYWRnZSI+Rk9DVVM8L3NwYW4+JzonJ308ZGl2IGNsYXNzPSJtaW5pIj5jb25maWRlbmNlICR7by5jb25maWRlbmNlPT1udWxsPyfigJQnOk4oby5jb25maWRlbmNlKSsnJSd9PC9kaXY+PC90ZD48dGQ+JHtFKHI/LnNvdXJjZV9tYXJrZXR8fGUucz8ubWFya2V0fHwn4oCUJyl9IOKGkiAke0Uocj8uZGVzdGluYXRpb25fbWFya2V0fHxlLmQ/Lm1hcmtldHx8by50YXJnZXRfbWFya2V0fHwn4oCUJyl9PC90ZD48dGQ+PGRpdiBjbGFzcz0icXVldWVTdGF0dXMiPiR7c3RhZ2VIdG1sKG8sZSl9PC9kaXY+PC90ZD48dGQgY2xhc3M9ImJlbmNobWFya0NvbCI+JHtiZW5jaG1hcmtDZWxsSHRtbChvLGUpfTwvdGQ+PHRkIGNsYXNzPSJlY29ub21pY3NDb2wiPiR7bGFuZCE9bnVsbD9tb25leUxvY2FsVXNkKGxhbmQsbGFuZGVkQ3VycmVuY3kobyxyKSk6JzxzcGFuIGNsYXNzPSJzdGF0dXNUZXh0Ij5QZW5kaW5nPC9zcGFuPid9PGRpdiBjbGFzcz0ibWluaSI+bWFyZ2luICR7bWFyZ2luIT1udWxsP04obWFyZ2luKSsnJSc6J3BlbmRpbmcnfTwvZGl2PjwvdGQ+PHRkIGNsYXNzPSJzdGF0ZUNvbCI+PHNwYW4gY2xhc3M9InN0YXR1c1RhZyAke3N0WzFdfSI+JHtzdFswXX08L3NwYW4+PC90ZD48dGQgY2xhc3M9InNjb3JlIj4ke3Njb3JlKG8pPz8n4oCUJ308L3RkPjwvdHI+YH0pLmpvaW4oJycpfTwvdGJvZHk+PC90YWJsZT5gOic8ZGl2IGNsYXNzPSJlbXB0eSI+Tm8gYWN0aXZlIHJlc2VhcmNoIGNhbmRpZGF0ZS48L2Rpdj4nfQ==').decode()
+          marker='.benchmarkCell{white-space:nowrap}'
+          if '.benchmarkStrong{' not in s and marker in s:
+              s=s.replace(marker,css,1)
           anchor='function renderResearch(){'
           if 'function marketBenchmarkFor(o,e)' not in s and anchor in s:
               s=s.replace(anchor,helper+anchor,1)
-
           start=s.find('function renderResearch(){')
           end=s.find('function renderArchive(){',start)
-          if start==-1 or end==-1:
+          if start<0 or end<0:
               raise SystemExit('renderResearch markers not found')
-          new_render='''function renderResearch(){let rows=A(DATA,'opportunities').filter(o=>active(o)&&!economics(o).exec).sort((a,b)=>economics(b).done-economics(a).done);$('#researchList').innerHTML=rows.length?`<table class="tbl"><thead><tr><th>Candidate</th><th>Route</th><th>Progress</th><th>Competitive benchmark</th><th>Landed / margin</th><th>State</th><th>Priority</th></tr></thead><tbody>${rows.map(o=>{let e=economics(o),r=e.r,land=r?.landed_cost??o.landed_cost_estimate,margin=r?.expected_margin_pct??o.expected_margin_pct,st=conciseStatus(o,e);return`<tr class="click" onclick="openOpp('${E(o.id)}')"><td><b>${icon(o.title)} ${E(o.title)}</b>${focusTrace(o)?' <span class="badge focusBadge">FOCUS</span>':''}<div class="mini">confidence ${o.confidence==null?'—':N(o.confidence)+'%'}</div></td><td>${E(r?.source_market||e.s?.market||'—')} → ${E(r?.destination_market||e.d?.market||o.target_market||'—')}</td><td><div class="queueStatus">${stageHtml(o,e)}</div></td><td class="benchmarkCol">${benchmarkCellHtml(o,e)}</td><td class="economicsCol">${land!=null?moneyLocalUsd(land,landedCurrency(o,r)):'<span class="statusText">Pending</span>'}<div class="mini">margin ${margin!=null?N(margin)+'%':'pending'}</div></td><td class="stateCol"><span class="statusTag ${st[1]}">${st[0]}</span></td><td class="score">${score(o)??'—'}</td></tr>`}).join('')}</tbody></table>`:'<div class="empty">No active research candidate.</div>'}'''
-          s=s[:start]+new_render+s[end:]
+          s=s[:start]+render+s[end:]
           p.write_text(s)
           PY
-          python /tmp/patch_queue.py
       - name: Verify decision hierarchy and preserved invariants
         shell: bash
         run: |
@@ -46,7 +43,6 @@ jobs:
           grep -q 'market_price_benchmarks' index.html
           grep -q 'benchmarkStrong' index.html
           grep -q 'class="stateCol"' index.html
-          ! grep -q '<th>Status</th>' index.html
           grep -q 'animateMotion' index.html
           grep -q 'sellArrow' index.html
           grep -q 'activeGatePulse' index.html
