@@ -1,0 +1,76 @@
+name: Restore approved UI motion
+on:
+  push:
+    paths:
+      - '.github/workflows/restore-ui-motion.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch current dashboard additively
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          p=Path('index.html')
+          s=p.read_text()
+
+          # 1) Restore subtle active progress animation and approved map motion/focus behavior.
+          css_anchor='.stage.miss{opacity:.48}'
+          css_add='''.stage.miss{opacity:.48}.stage.check.activeNow{animation:activeGatePulse 1.15s ease-in-out infinite}.routePath{transition:opacity .18s,stroke-width .18s,filter .18s}.cargo{font-size:16px;opacity:.72;filter:drop-shadow(0 0 4px #071018);transition:opacity .18s,font-size .18s;pointer-events:none}.pin,.dest{transition:opacity .18s,filter .18s}.pinIcon,.destDot{transition:transform .16s,box-shadow .16s,border-color .16s}.pin.liveRoute .pinIcon{animation:routeSourcePulse 1.8s ease-in-out infinite}.dest.liveRoute .destDot{animation:routeDestPulse 1.8s ease-in-out infinite}.pin:hover,.pin.focused,.dest:hover,.dest.focused{z-index:30}.pin:hover .pinIcon,.pin.focused .pinIcon{transform:scale(1.5);box-shadow:0 0 30px rgba(110,231,183,.62)}.dest:hover .destDot,.dest.focused .destDot{transform:scale(1.45);box-shadow:0 0 20px rgba(216,228,236,.55)}.radar.focus .pin,.radar.focus .dest,.radar.focus .routePath,.radar.focus .cargo{opacity:.09!important}.radar.focus .pin.focused,.radar.focus .dest.focused,.radar.focus .routePath.focused,.radar.focus .cargo.focused{opacity:1!important}.radar.focus .routePath.focused{stroke-width:4;filter:drop-shadow(0 0 7px currentColor)}.radar.focus .cargo.focused{font-size:22px}.scanLive{width:9px;height:9px;position:relative}.scanLive:before,.scanLive:after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(45deg);background:var(--cyan)}.scanLive:before{width:9px;height:2px}.scanLive:after{width:2px;height:9px}.scanMark.live{z-index:9;filter:drop-shadow(0 0 6px var(--cyan));animation:starBlink .7s infinite}.scanTag{position:absolute;left:8px;top:-9px;color:var(--cyan);font-size:9px;white-space:nowrap}.nextSub{font-size:11px;color:var(--muted);font-weight:400;line-height:1.35;margin-top:4px;max-width:520px}.statusText{font-size:12px;color:#a9bac7;font-weight:400;line-height:1.35}@keyframes activeGatePulse{0%,100%{opacity:.62;box-shadow:0 0 0 rgba(255,211,109,0)}50%{opacity:1;box-shadow:0 0 10px rgba(255,211,109,.28)}}@keyframes routeSourcePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes routeDestPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.22)}}@keyframes starBlink{0%,100%{opacity:.35;transform:translate(-50%,-50%) scale(.75)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.25)}}'''
+          if css_anchor in s and 'activeGatePulse' not in s:
+              s=s.replace(css_anchor,css_add,1)
+
+          # 2) Truthful current-cycle pulse only for genuinely checking states with fresh route activity.
+          old="function stageHtml(o,e){let a=[['BUY',e.buy?'done':'missing'],['SELL',e.sell?'done':'missing'],['FREIGHT',e.freight?'done':e.fs],['TAX',e.compliance?'done':e.ts],['LANDED',e.landed?'done':'missing'],['MARGIN',e.profit?'done':'missing']];return a.map(([n,s])=>`<span class=\"stage ${s==='done'?'done':s==='checking'?'check':s==='blocked'?'block':'miss'}\">${s==='done'?'✓':s==='checking'?'⟳':s==='blocked'?'!':'·'} ${n}</span>`).join('')}"
+          new="function routeFreshActive(e){let r=e?.r;if(!r)return false;let st=String(r.freight_status||'')+' '+String(r.tax_status||'')+' '+String(r.status||'');if(!/checking|running|fetching|quoting|research|active/i.test(st))return false;let t=new Date(r.updated_at||r.created_at||0).getTime();return Number.isFinite(t)&&Date.now()-t<15*60*1000}function stageHtml(o,e){let activeNow=routeFreshActive(e),a=[['BUY',e.buy?'done':'missing'],['SELL',e.sell?'done':'missing'],['FREIGHT',e.freight?'done':e.fs],['TAX',e.compliance?'done':e.ts],['LANDED',e.landed?'done':'missing'],['MARGIN',e.profit?'done':'missing']];return a.map(([n,s])=>`<span class=\"stage ${s==='done'?'done':s==='checking'?'check':s==='blocked'?'block':'miss'} ${s==='checking'&&activeNow?'activeNow':''}\">${s==='done'?'✓':s==='checking'?'⟳':s==='blocked'?'!':'·'} ${n}</span>`).join('')}"
+          if old in s:
+              s=s.replace(old,new,1)
+
+          # 3) Compact Research Queue. Next action becomes small muted secondary metadata.
+          start=s.find('function renderResearch(){')
+          end=s.find('function renderArchive(){',start)
+          if start!=-1 and end!=-1:
+              new_render="""function renderResearch(){let rows=A(DATA,'opportunities').filter(o=>active(o)&&!economics(o).exec).sort((a,b)=>economics(b).done-economics(a).done);$('#researchList').innerHTML=rows.length?`<table class=\"tbl\"><thead><tr><th>Candidate</th><th>Route</th><th>Progress</th><th>Benchmark / economics</th><th>Status</th><th>Priority</th></tr></thead><tbody>${rows.map(o=>{let e=economics(o),r=e.r,bench=e.d?.price?N(e.d.price).toLocaleString()+' '+E(e.d.currency||''):'Pending',land=r?.landed_cost??o.landed_cost_estimate,margin=r?.expected_margin_pct??o.expected_margin_pct,block=r?.stop_reason||o.risk_summary||'Research in progress',nxt=r?.next_action||nextAction(o,e);return`<tr class=\"click\" onclick=\"openOpp('${E(o.id)}')\"><td><b>${icon(o.title)} ${E(o.title)}</b>${focusTrace(o)?' <span class=\"badge focusBadge\">FOCUS</span>':''}<div class=\"mini\">confidence ${o.confidence==null?'—':N(o.confidence)+'%'}</div></td><td>${E(r?.source_market||e.s?.market||'—')} → ${E(r?.destination_market||e.d?.market||o.target_market||'—')}</td><td><div class=\"queueStatus\">${stageHtml(o,e)}</div></td><td><span class=\"statusText\">sell ${bench}</span><div class=\"mini\">landed ${land!=null?N(land).toLocaleString()+' '+E(r?.landed_currency||''):'pending'} · margin ${margin!=null?N(margin)+'%':'pending'}</div></td><td><span class=\"statusText\">${E(block)}</span><div class=\"nextSub\">next: ${E(nxt)}</div></td><td class=\"score\">${score(o)??'—'}</td></tr>`}).join('')}</tbody></table>`:'<div class=\"empty\">No active research candidate.</div>'}"
+              s=s[:start]+new_render+s[end:]
+
+          # 4) Restore route spreading, arrows, moving goods, hover isolation and truthful live scan blink.
+          insert_at=s.find('function renderMap(){')
+          if insert_at!=-1 and 'function spreadPoint(base,used,seed)' not in s:
+              helpers="""function spreadPoint(base,used,seed){if(!base)return null;let p={...base},tries=0;while(used.some(u=>Math.hypot(u.x-p.x,u.y-p.y)<6)&&tries<14){let a=(seed*71+tries*47)*Math.PI/180,r=3+Math.floor(tries/3)*2;p={x:Math.max(3,Math.min(97,base.x+Math.cos(a)*r)),y:Math.max(7,Math.min(93,base.y+Math.sin(a)*r))};tries++}used.push(p);return p}function focusOppMap(id,on){let r=$('#radar');r.classList.toggle('focus',on);r.querySelectorAll('[data-opp]').forEach(el=>el.classList.toggle('focused',on&&String(el.dataset.opp)===String(id)))}function bindFocus(el,id){el.dataset.opp=id;el.addEventListener('mouseenter',()=>focusOppMap(id,true));el.addEventListener('mouseleave',()=>focusOppMap(id,false))}function addMotionSource(code,p,o,i,live){let el=document.createElement('div');el.className='pin '+(live?'liveRoute':'');el.style.left=p.x+'%';el.style.top=p.y+'%';el.onclick=()=>openOpp(o.id);bindFocus(el,o.id);el.innerHTML=`<div class=\"pinIcon\">${icon(o.title)}</div><div class=\"lbl\">${E(code)}</div>`;$('#radar').appendChild(el)}function addMotionDest(code,p,o,i,live){let el=document.createElement('div');el.className='dest '+(live?'liveRoute':'');el.style.left=p.x+'%';el.style.top=p.y+'%';el.onclick=()=>openOpp(o.id);bindFocus(el,o.id);el.innerHTML=`<div class=\"destDot\"></div><div class=\"lbl\">${E(code)}</div>`;$('#radar').appendChild(el)}"""
+              s=s[:insert_at]+helpers+s[insert_at:]
+          start=s.find('function renderMap(){')
+          end=s.find('function toggleLayer(',start)
+          if start!=-1 and end!=-1:
+              new_map="""function renderMap(){let rad=$('#radar'),svg=$('#routeSvg');rad.classList.remove('focus');rad.querySelectorAll('.pin,.dest,.scanMark').forEach(x=>x.remove());svg.innerHTML='<defs><marker id=\"sellArrow\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"#9fb1bd\"/></marker></defs>';let rows=A(DATA,'opportunities').filter(active).slice(0,12),used=[];rows.forEach((o,i)=>{let e=economics(o),sm=e.r?.source_market||e.s?.market,dm=e.r?.destination_market||e.d?.market||o.target_market,a=spreadPoint(project(sm,i),used,i*2+1),b=spreadPoint(project(dm,i+4),used,i*2+2),exec=e.exec;if(!a||!b||(!LAYERS.money&&exec)||(!LAYERS.research&&!exec))return;let rid='route-'+String(o.id).replace(/[^a-zA-Z0-9_-]/g,'-'),p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('id',rid);p.setAttribute('d',curve(a,b));p.setAttribute('class','routePath '+(exec?'exec':''));p.setAttribute('marker-end','url(#sellArrow)');p.dataset.opp=o.id;svg.appendChild(p);let cargo=document.createElementNS('http://www.w3.org/2000/svg','text');cargo.setAttribute('class','cargo');cargo.dataset.opp=o.id;cargo.textContent=icon(o.title);let motion=document.createElementNS('http://www.w3.org/2000/svg','animateMotion');motion.setAttribute('dur',(2.7+(i%5)*.35)+'s');motion.setAttribute('repeatCount','indefinite');motion.setAttribute('calcMode','linear');let mp=document.createElementNS('http://www.w3.org/2000/svg','mpath');mp.setAttribute('href','#'+rid);motion.appendChild(mp);cargo.appendChild(motion);svg.appendChild(cargo);let live=routeFreshActive(e);addMotionSource(sm,a,o,i,live);addMotionDest(dm,b,o,i,live)});if(LAYERS.scan){let obs=A(DATA,'observations').filter(x=>GEO[x.source_country]).sort((a,b)=>String(b.observed_at||'').localeCompare(String(a.observed_at||'')));obs.slice(0,45).forEach((x,i)=>{let p=project(x.source_country,i);if(!p)return;let el=document.createElement('div'),fresh=Date.now()-new Date(x.observed_at||0).getTime()<2*60*1000;el.className='scanMark'+(fresh?' live':'');el.style.left=p.x+'%';el.style.top=p.y+'%';el.innerHTML=fresh?`<div class=\"scanLive\"></div><div class=\"scanTag\">LIVE · ${E(x.source_country)}</div>`:'<div class=\"scanDone\"></div>';rad.appendChild(el)})}}"
+              s=s[:start]+new_map+s[end:]
+
+          # 5) Deep-dive next action: remove visual spotlight while preserving information.
+          s=s.replace("<div class=\"warn\" style=\"margin-top:10px\"><b>Next:</b> ${E(nextAction(o,e))}</div>","<div class=\"nextSub\">next: ${E(nextAction(o,e))}</div>")
+
+          p.write_text(s)
+      - name: Verify invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'Focus Results' index.html
+          grep -q 'focus.html' index.html
+          grep -q 'Hunt / Quote' index.html
+          grep -q 'Rejected / checked history' index.html
+          grep -q 'animateMotion' index.html
+          grep -q 'sellArrow' index.html
+          grep -q 'activeGatePulse' index.html
+          ! grep -q '<th>Engine next action</th>' index.html
+          ! grep -q '<b class="warn">${E(nextAction(o,e))}</b>' index.html
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name 'Radar UI Restorer'
+          git config user.email 'actions@users.noreply.github.com'
+          git add index.html
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Restore approved motion and dashboard UI invariants'
+          git push
