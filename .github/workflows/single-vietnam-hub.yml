@@ -1,0 +1,54 @@
+name: Single Vietnam hub map
+on:
+  push:
+    paths:
+      - '.github/workflows/single-vietnam-hub.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guarded patch
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text()
+          replacements=[
+            ("l=tradeLane(o,e),a=spreadPoint(project(sm,i),used,i*2+1),b=spreadPoint(project(dm,i+4),used,i*2+2),exec=profitConfirmed(o);",
+             "l=tradeLane(o,e),hubPoint=project('VN',0),a=String(sm).toUpperCase()==='VN'?hubPoint:spreadPoint(project(sm,i),used,i*2+1),b=String(dm).toUpperCase()==='VN'?hubPoint:spreadPoint(project(dm,i+4),used,i*2+2),exec=profitConfirmed(o);"),
+            ("let live=routeFreshActive(e);addMotionSource(sm,a,o,i,live);addMotionDest(dm,b,o,i,live)});",
+             "let live=routeFreshActive(e);if(String(sm).toUpperCase()!=='VN')addMotionSource(sm,a,o,i,live);if(String(dm).toUpperCase()!=='VN')addMotionDest(dm,b,o,i,live)});"),
+            ("let obs=A(DATA,'observations').filter(x=>GEO[x.source_country]).sort((a,b)=>String(b.observed_at||'').localeCompare(String(a.observed_at||'')));",
+             "let obs=A(DATA,'observations').filter(x=>GEO[x.source_country]&&String(x.source_country).toUpperCase()!=='VN').sort((a,b)=>String(b.observed_at||'').localeCompare(String(a.observed_at||'')));"),
+          ]
+          for old,new in replacements:
+            n=s.count(old)
+            if n!=1:
+              raise SystemExit(f'guard failed: expected 1 occurrence, found {n}: {old[:90]}')
+            s=s.replace(old,new,1)
+          if "hubPoint=project('VN',0)" not in s:
+            raise SystemExit('hub point patch missing')
+          if "if(String(sm).toUpperCase()!=='VN')addMotionSource" not in s or "if(String(dm).toUpperCase()!=='VN')addMotionDest" not in s:
+            raise SystemExit('VN node suppression patch missing')
+          p.write_text(s)
+      - name: JavaScript syntax check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text()
+          m=re.search(r'<script>(.*)</script>',s,re.S)
+          assert m, 'script block missing'
+          Path('/tmp/radar.js').write_text(m.group(1))
+          PY
+          node --check /tmp/radar.js
+      - name: Commit patch
+        run: |
+          git config user.name radar-builder
+          git config user.email radar-builder@users.noreply.github.com
+          git add index.html
+          git commit -m "Collapse Vietnam map routes into one hub"
+          git push
