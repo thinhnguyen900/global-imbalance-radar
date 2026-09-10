@@ -1,0 +1,42 @@
+name: Profit benchmark quality gate
+on:
+  push:
+    paths:
+      - '.github/workflows/profit-benchmark-quality-gate.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add benchmark quality gate
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text()
+          old="""function profitConfirmed(o){let e=economics(o),r=e.r;if(!vnActive(o))return false;let margin=r?.expected_margin_pct??o.expected_margin_pct,profit=r?.expected_profit??o.expected_profit,profitable=margin!=null?Number(margin)>0:(profit!=null&&Number(profit)>0),fs=String(r?.freight_status||o.estimates?.freight_status||'').toLowerCase(),ts=String(r?.tax_status||o.estimates?.tax_status||'').toLowerCase(),freightStrong=/(verified_quote|verified|complete)/.test(fs)&&!/(indicative|public_tariff|estimate|pending|checking)/.test(fs),taxStrong=/(verified|known|complete)/.test(ts)&&!/(indicative|estimate|pending|checking)/.test(ts);return e.buy&&e.sell&&e.landed&&profitable&&freightStrong&&taxStrong&&N(o.confidence,0)>=90}"""
+          new="""function profitConfirmed(o){let e=economics(o),r=e.r;if(!vnActive(o))return false;let margin=r?.expected_margin_pct??o.expected_margin_pct,profit=r?.expected_profit??o.expected_profit,profitable=margin!=null?Number(margin)>0:(profit!=null&&Number(profit)>0),fs=String(r?.freight_status||o.estimates?.freight_status||'').toLowerCase(),ts=String(r?.tax_status||o.estimates?.tax_status||'').toLowerCase(),freightStrong=/(verified_quote|verified|complete)/.test(fs)&&!/(indicative|public_tariff|estimate|pending|checking)/.test(fs),taxStrong=/(verified|known|complete)/.test(ts)&&!/(indicative|estimate|pending|checking)/.test(ts),benchmarkStrong=N(r?.benchmark_quality_score??o.benchmark_quality_score,0)>=80;return e.buy&&e.sell&&e.landed&&profitable&&freightStrong&&taxStrong&&benchmarkStrong&&N(o.confidence,0)>=90}"""
+          if old not in s:
+              raise SystemExit('guard failed: profitConfirmed changed')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+      - name: Verify invariant
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text()
+          assert 'benchmarkStrong=N(r?.benchmark_quality_score??o.benchmark_quality_score,0)>=80' in s
+          assert '&&benchmarkStrong&&N(o.confidence,0)>=90' in s
+          print('profit benchmark quality gate passed')
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name radar-builder
+          git config user.email radar-builder@users.noreply.github.com
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m 'Require strong benchmark quality for profit confirmation'
+          git push
