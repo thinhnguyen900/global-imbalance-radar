@@ -16,24 +16,34 @@ jobs:
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text()
+          original=s
+          targets=[
+            "a=String(sm||'').toUpperCase()==='VN'?project('VN',0):spreadPoint(project(sm,i),used,i*2+1)",
+            "b=String(dm||'').toUpperCase()==='VN'?project('VN',0):spreadPoint(project(dm,i+4),used,i*2+2)",
+            "if(String(sm||'').toUpperCase()!=='VN')addMotionSource(sm,a,o,i,live)",
+            "if(String(dm||'').toUpperCase()!=='VN')addMotionDest(dm,b,o,i,live)",
+            "filter(x=>GEO[x.source_country]&&String(x.source_country).toUpperCase()!=='VN')"
+          ]
           replacements=[
-            ("l=tradeLane(o,e),a=spreadPoint(project(sm,i),used,i*2+1),b=spreadPoint(project(dm,i+4),used,i*2+2),exec=profitConfirmed(o);",
-             "l=tradeLane(o,e),hubPoint=project('VN',0),a=String(sm).toUpperCase()==='VN'?hubPoint:spreadPoint(project(sm,i),used,i*2+1),b=String(dm).toUpperCase()==='VN'?hubPoint:spreadPoint(project(dm,i+4),used,i*2+2),exec=profitConfirmed(o);"),
-            ("let live=routeFreshActive(e);addMotionSource(sm,a,o,i,live);addMotionDest(dm,b,o,i,live)});",
-             "let live=routeFreshActive(e);if(String(sm).toUpperCase()!=='VN')addMotionSource(sm,a,o,i,live);if(String(dm).toUpperCase()!=='VN')addMotionDest(dm,b,o,i,live)});"),
-            ("let obs=A(DATA,'observations').filter(x=>GEO[x.source_country]).sort((a,b)=>String(b.observed_at||'').localeCompare(String(a.observed_at||'')));",
-             "let obs=A(DATA,'observations').filter(x=>GEO[x.source_country]&&String(x.source_country).toUpperCase()!=='VN').sort((a,b)=>String(b.observed_at||'').localeCompare(String(a.observed_at||'')));"),
+            ("a=spreadPoint(project(sm,i),used,i*2+1)", targets[0]),
+            ("b=spreadPoint(project(dm,i+4),used,i*2+2)", targets[1]),
+            ("addMotionSource(sm,a,o,i,live);", targets[2]+";"),
+            ("addMotionDest(dm,b,o,i,live)", targets[3]),
+            ("filter(x=>GEO[x.source_country])", targets[4]),
           ]
           for old,new in replacements:
+            if new in s:
+              continue
             n=s.count(old)
             if n!=1:
-              raise SystemExit(f'guard failed: expected 1 occurrence, found {n}: {old[:90]}')
+              raise SystemExit(f'guard failed: target absent and expected 1 old occurrence, found {n}: {old}')
             s=s.replace(old,new,1)
-          if "hubPoint=project('VN',0)" not in s:
-            raise SystemExit('hub point patch missing')
-          if "if(String(sm).toUpperCase()!=='VN')addMotionSource" not in s or "if(String(dm).toUpperCase()!=='VN')addMotionDest" not in s:
-            raise SystemExit('VN node suppression patch missing')
-          p.write_text(s)
+          for t in targets:
+            if t not in s:
+              raise SystemExit('target invariant missing: '+t)
+          if s!=original:
+            p.write_text(s)
+            Path('/tmp/changed').write_text('1')
       - name: JavaScript syntax check
         run: |
           python - <<'PY'
@@ -45,10 +55,14 @@ jobs:
           Path('/tmp/radar.js').write_text(m.group(1))
           PY
           node --check /tmp/radar.js
-      - name: Commit patch
+      - name: Commit patch if needed
         run: |
-          git config user.name radar-builder
-          git config user.email radar-builder@users.noreply.github.com
-          git add index.html
-          git commit -m "Collapse Vietnam map routes into one hub"
-          git push
+          if [ -f /tmp/changed ]; then
+            git config user.name radar-builder
+            git config user.email radar-builder@users.noreply.github.com
+            git add index.html
+            git commit -m "Restore one shared Vietnam hub on trade map"
+            git push
+          else
+            echo "Single Vietnam hub already present; no app change needed."
+          fi
