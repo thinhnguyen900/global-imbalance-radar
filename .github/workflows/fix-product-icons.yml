@@ -1,0 +1,57 @@
+name: Fix product icons
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-product-icons.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch semantic product icons only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('index.html')
+          s=p.read_text()
+          assert '🇻🇳 Vietnam Trade Radar' in s
+          assert "if(/lego/.test(t))return'🧱'" in s
+          assert 'animateMotion' in s and 'sellArrow' in s and 'vnHub' in s
+          pat=r"function icon\(t\)\{.*?return'📦'\}"
+          m=re.search(pat,s)
+          assert m, 'icon() function not found'
+          new="""function icon(t){t=String(t||'').toLowerCase();if(/lego/.test(t))return'🧩';if(/nintendo|switch|playstation|xbox|gaming|game console/.test(t))return'🎮';if(/tamron|sigma|fujifilm|camera|lens|sony fe|e-mount|dg dn|xf 35/.test(t))return'📷';if(/headphone|headset|earbud|wh-1000|wh1000/.test(t))return'🎧';if(/garmin|forerunner|smartwatch|watch/.test(t))return'⌚';if(/pilot custom|fountain pen|urushi|pen\b/.test(t))return'✒️';if(/sunglass|eyewear|glasses|gentle monster|ray-ban|spectacle|frame/.test(t))return'🕶️';if(/eyebrow.*scissor|scissor/.test(t))return'✂️';if(/eyelash|curler/.test(t))return'👁️';if(/wallet|card holder|card wallet/.test(t))return'👛';if(/bag|satchel|tote|handbag|charles|michael kors|marhen|find kapoor|stand oil/.test(t))return'👜';if(/sunscreen|uv gel|cosmetic|skincare|anessa|canmake/.test(t))return'🧴';if(/pocky|glico|chocolate/.test(t))return'🍫';if(/calbee|chips|snack|food|melon/.test(t))return'🍿';if(/shoe|sneaker/.test(t))return'👟';return'📦'}"""
+          s2=re.sub(pat,new,s,count=1)
+          assert s2!=s
+          assert "if(/lego/.test(t))return'🧩'" in s2
+          assert "return'🧱'" not in s2
+          # Regression invariants: do not touch approved route/map behavior or Vietnam-first layout.
+          for token in ['animateMotion','sellArrow','activeGatePulse','vnHub','Profit-Confirmed Vietnam Trades','Vietnam Trade Research Queue']:
+              assert token in s2, token
+          p.write_text(s2)
+          PY
+      - name: JavaScript syntax check
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text()
+          scripts=re.findall(r'<script>(.*?)</script>',s,re.S)
+          assert scripts
+          Path('/tmp/dashboard.js').write_text('\n'.join(scripts))
+          PY
+          node --check /tmp/dashboard.js
+      - name: Commit patch and remove temporary workflow
+        run: |
+          rm .github/workflows/fix-product-icons.yml
+          git config user.name 'radar-builder'
+          git config user.email 'radar-builder@users.noreply.github.com'
+          git add index.html .github/workflows/fix-product-icons.yml
+          git commit -m 'Use semantic icons for dashboard products'
+          git push origin HEAD:main
