@@ -1,0 +1,35 @@
+name: Profit source accessibility gate
+on:
+  push:
+    paths:
+      - '.github/workflows/profit-source-accessibility-gate.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require executable source before profit confirmation
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text()
+          old="freightStrong=/(verified_quote|verified|complete)/.test(fs)&&!/(indicative|public_tariff|estimate|pending|checking)/.test(fs),taxStrong=/(verified|known|complete)/.test(ts)&&!/(indicative|estimate|pending|checking)/.test(ts),benchmarkStrong=N(r?.benchmark_quality_score??o.benchmark_quality_score,0)>=80;return e.buy&&e.sell&&e.landed&&profitable&&freightStrong&&taxStrong&&benchmarkStrong&&N(o.confidence,0)>=90"
+          new="freightStrong=/(verified_quote|verified|complete)/.test(fs)&&!/(indicative|public_tariff|estimate|pending|checking)/.test(fs),taxStrong=/(verified|known|complete)/.test(ts)&&!/(indicative|estimate|pending|checking)/.test(ts),benchmarkStrong=N(r?.benchmark_quality_score??o.benchmark_quality_score,0)>=80,sourceAccessText=String(meta(r).source_accessibility||r?.status||r?.stop_reason||'').toLowerCase(),sourceAccessible=!!safe(r?.source_url||e.s?.url)&&!/(inaccessible|not[_ -]?evidenced|internal[_ -]?transfer|customs[_ -]?value|reference[_ -]?only)/.test(sourceAccessText);return e.buy&&e.sell&&e.landed&&profitable&&sourceAccessible&&freightStrong&&taxStrong&&benchmarkStrong&&N(o.confidence,0)>=90"
+          if old not in s:
+              raise SystemExit('guard failed: profitConfirmed pattern not found')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+      - name: Verify gate
+        run: |
+          grep -q "sourceAccessible=!!safe" index.html
+          grep -q "profitable&&sourceAccessible&&freightStrong" index.html
+      - name: Commit
+        run: |
+          git config user.name radar-builder
+          git config user.email radar-builder@users.noreply.github.com
+          git add index.html
+          git commit -m "Require executable source for profit confirmation" || exit 0
+          git push
