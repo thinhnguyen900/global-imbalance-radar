@@ -1,0 +1,54 @@
+name: Prefer live route rollup
+on:
+  push:
+    paths:
+      - '.github/workflows/prefer-live-route-rollup.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guarded route rollup patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text()
+          old="function routeBest(o){return routesFor(o).sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||'')))[0]||null}"
+          new="function routeBest(o){let rows=routesFor(o),liveRank=r=>/reject|failed|exhaust|blocked/i.test(String(r?.status||''))?0:1;return rows.sort((a,b)=>(liveRank(b)-liveRank(a))||String(b.updated_at||'').localeCompare(String(a.updated_at||'')))[0]||null}"
+          assert old in s, 'routeBest guard not found'
+          assert 'function tradeLane' in s and 'function profitConfirmed' in s
+          s=s.replace(old,new,1)
+          assert new in s
+          p.write_text(s)
+          PY
+      - name: JS syntax check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text()
+          scripts=re.findall(r'<script>([\s\S]*?)</script>',s)
+          assert scripts
+          Path('/tmp/radar.js').write_text('\n'.join(scripts))
+          PY
+          node --check /tmp/radar.js
+      - name: Static behavior guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text()
+          assert "liveRank=r=>/reject|failed|exhaust|blocked/i" in s
+          assert "liveRank(b)-liveRank(a)" in s
+          assert "renderMap()" in s and "profitConfirmed" in s
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name radar-builder
+          git config user.email radar-builder@users.noreply.github.com
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m "Prefer live routes over terminal failures"
+          git push
