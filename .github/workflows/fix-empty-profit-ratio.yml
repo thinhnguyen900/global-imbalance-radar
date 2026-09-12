@@ -1,0 +1,40 @@
+name: Fix empty profit ratio
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-empty-profit-ratio.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make empty active set explicit
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text()
+          old="pc=ops.filter(profitConfirmed).length,ratio=ops.length?pc/ops.length*100:0,c=(h,v,s)=>"
+          new="pc=ops.filter(profitConfirmed).length,ratio=ops.length?pc/ops.length*100:null,c=(h,v,s)=>"
+          if s.count(old)!=1: raise SystemExit(f'guard failed ratio anchor: {s.count(old)}')
+          s=s.replace(old,new,1)
+          old2="c('Profit-certainty ratio',`<span class=\"profitGauge ${ratio>=80?'good':ratio>0?'warn':'bad'}\">${ratio.toFixed(0)}%</span>`,`${pc}/${ops.length} active Vietnam opportunities are profit-confirmed · target ≥80%`)"
+          new2="c('Profit-certainty ratio',ratio==null?'<span class=\"profitGauge muted\">—</span>':`<span class=\"profitGauge ${ratio>=80?'good':ratio>0?'warn':'bad'}\">${ratio.toFixed(0)}%</span>`,ratio==null?'No active Vietnam opportunities · discovery pipeline needs fresh candidates':`${pc}/${ops.length} active Vietnam opportunities are profit-confirmed · target ≥80%`)"
+          if s.count(old2)!=1: raise SystemExit(f'guard failed display anchor: {s.count(old2)}')
+          s=s.replace(old2,new2,1)
+          p.write_text(s)
+          PY
+      - name: Validate JavaScript and UX invariant
+        run: |
+          node - <<'NODE'
+          const fs=require('fs'); const s=fs.readFileSync('index.html','utf8'); const m=s.match(/<script>([\s\S]*?)<\/script>/); if(!m) throw Error('script missing'); new Function(m[1]); if(!s.includes('No active Vietnam opportunities · discovery pipeline needs fresh candidates')) throw Error('empty-state text missing'); console.log('JS syntax + empty-state invariant OK');
+          NODE
+      - name: Commit patch
+        run: |
+          git config user.name radar-builder
+          git config user.email radar-builder@users.noreply.github.com
+          git add index.html
+          git commit -m 'Handle empty Vietnam profit-certainty denominator'
+          git push
