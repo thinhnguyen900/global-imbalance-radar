@@ -1,0 +1,50 @@
+name: Single Vietnam hub map
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'radar-builder'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch Vietnam map hub
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text()
+          old="a=spreadPoint(project(sm,i),used,i*2+1),b=spreadPoint(project(dm,i+4),used,i*2+2),exec=profitConfirmed(o);"
+          new="hub=project('VN',0),a=String(sm).toUpperCase()==='VN'?hub:spreadPoint(project(sm,i),used,i*2+1),b=String(dm).toUpperCase()==='VN'?hub:spreadPoint(project(dm,i+4),used,i*2+2),exec=profitConfirmed(o);"
+          if old not in s:
+              raise SystemExit('Guard failed: expected route point logic not found')
+          s=s.replace(old,new,1)
+          old2="addMotionSource(sm,a,o,i,live);addMotionDest(dm,b,o,i,live)"
+          new2="if(String(sm).toUpperCase()!=='VN')addMotionSource(sm,a,o,i,live);if(String(dm).toUpperCase()!=='VN')addMotionDest(dm,b,o,i,live)"
+          if old2 not in s:
+              raise SystemExit('Guard failed: expected endpoint render logic not found')
+          s=s.replace(old2,new2,1)
+          if s.count("className='vnHub'") != 1:
+              raise SystemExit('Guard failed: expected exactly one Vietnam hub marker')
+          p.write_text(s)
+      - name: Sanity checks
+        shell: bash
+        run: |
+          grep -q "String(sm).toUpperCase()==='VN'?hub" index.html
+          grep -q "String(dm).toUpperCase()==='VN'?hub" index.html
+          grep -q "String(sm).toUpperCase()!=='VN'" index.html
+          grep -q "String(dm).toUpperCase()!=='VN'" index.html
+          test "$(grep -o "className='vnHub'" index.html | wc -l)" -eq 1
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name radar-builder
+          git config user.email radar-builder@users.noreply.github.com
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m "Collapse Vietnam route endpoints into one hub"
+          git push
