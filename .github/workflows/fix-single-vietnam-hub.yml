@@ -1,4 +1,4 @@
-name: Fix single Vietnam hub
+name: Guard Vietnam regional map split
 on:
   push:
     paths:
@@ -10,25 +10,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Guarded patch
+      - name: Guarded map-density patch
         run: |
           python - <<'PY'
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text()
-          old1="let rows=A(DATA,'opportunities').filter(vnActive).slice(0,18),used=[];rows.forEach((o,i)=>{let e=economics(o),sm=e.r?.source_market||e.s?.market,dm=e.r?.destination_market||e.d?.market||o.target_market,l=tradeLane(o,e),a=spreadPoint(project(sm,i),used,i*2+1),b=spreadPoint(project(dm,i+4),used,i*2+2),exec=profitConfirmed(o);"
-          new1="let rows=A(DATA,'opportunities').filter(vnActive).slice(0,18),used=[],hubPoint=project('VN',0);rows.forEach((o,i)=>{let e=economics(o),sm=e.r?.source_market||e.s?.market,dm=e.r?.destination_market||e.d?.market||o.target_market,l=tradeLane(o,e),a=sm==='VN'?hubPoint:spreadPoint(project(sm,i),used,i*2+1),b=dm==='VN'?hubPoint:spreadPoint(project(dm,i+4),used,i*2+2),exec=profitConfirmed(o);"
-          old2="let live=routeFreshActive(e);addMotionSource(sm,a,o,i,live);addMotionDest(dm,b,o,i,live)});let hp=project('VN',0);"
-          new2="let live=routeFreshActive(e);if(sm!=='VN')addMotionSource(sm,a,o,i,live);if(dm!=='VN')addMotionDest(dm,b,o,i,live)});let hp=hubPoint;"
-          assert old1 in s, 'renderMap route-point guard not found'
-          assert old2 in s, 'renderMap VN-node guard not found'
-          s=s.replace(old1,new1,1).replace(old2,new2,1)
-          assert "a=sm==='VN'?hubPoint" in s
-          assert "if(sm!=='VN')addMotionSource" in s
-          assert "if(dm!=='VN')addMotionDest" in s
+          old="],splitVN=regions.length>=2;function countryPoint(code,seed)"
+          new="],taggedVnRoutes=rows.filter(o=>{let e=economics(o),sm=String(e.r?.source_market||e.s?.market||'').toUpperCase(),dm=String(e.r?.destination_market||e.d?.market||o.target_market||'').toUpperCase();return sm==='VN'?!!vnRegion(o,e,'source'):dm==='VN'?!!vnRegion(o,e,'destination'):false}).length,splitVN=rows.length>=8&&regions.length===3&&taggedVnRoutes===rows.length;function countryPoint(code,seed)"
+          if s.count(old)!=1: raise SystemExit(f'split guard not found: {s.count(old)}')
+          s=s.replace(old,new,1)
+          assert "rows.length>=8&&regions.length===3&&taggedVnRoutes===rows.length" in s
+          assert "VIETNAM HUB" in s
+          assert "animateMotion" in s
           p.write_text(s)
           PY
-      - name: JS syntax check
+      - name: Validate JavaScript
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -39,12 +36,11 @@ jobs:
           Path('/tmp/radar.js').write_text('\n'.join(scripts))
           PY
           node --check /tmp/radar.js
-      - name: Commit patch
+      - name: Commit and clean temporary workflow
         run: |
+          rm .github/workflows/fix-single-vietnam-hub.yml
           git config user.name radar-builder
           git config user.email radar-builder@users.noreply.github.com
-          git add index.html
-          git diff --cached --quiet && exit 0
-          git commit -m "Collapse Vietnam routes to one map hub"
+          git add index.html .github/workflows/fix-single-vietnam-hub.yml
+          git commit -m "Guard Vietnam regional split by route density"
           git push
-# triggered by builder loop
